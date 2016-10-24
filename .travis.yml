@@ -18,7 +18,7 @@ before_install:
   - sudo mount -t hugetlbfs nodev /mnt/huge
 
 install:
-  - sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+  - sudo add-apt-repository -y 'deb http://us.archive.ubuntu.com/ubuntu trusty main restricted'
   - sudo apt-get update
   - sudo apt-get install -y gcc-4.7 g++-4.7
   - sudo apt-get install -y gcc-5 g++-5
