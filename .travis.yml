@@ -34,6 +34,7 @@ install:
   - sudo apt-get install -y -t yakkety libprotoc-dev
   - sudo apt-get install -y -t yakkety libgrpc0
   - sudo apt-get install -y -t yakkety libgrpc-dev
+  - .travis/install-grpc.sh
 
 script:
   - grpc_cpp_plugin asas
