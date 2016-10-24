@@ -31,9 +31,11 @@ install:
   - sudo apt-get install -y -t yakkety libgoogle-glog0v5
   - sudo apt-get install -y -t yakkety libgoogle-glog-dev
   - sudo apt-get install -y -t yakkety protobuf-compiler
+  - sudo apt-get install -y -t yakkety libgrpc0
   - sudo apt-get install -y -t yakkety libgrpc-dev
 
 script:
+  - ls -al /usr/bin/grpc* /usr/local/bin/grpc*
   - ./build.py
   - sudo bin/bessd -g
 
