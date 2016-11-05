@@ -1,0 +1,13 @@
+import scapy.all as scapy
+
+eth = scapy.Ether(dst='00:02:15:37:a2:44', src='00:ae:f3:52:aa:d1')
+ip = scapy.IP()
+tcp = scapy.TCP()
+payload = 'Hello World'
+
+test_packet = bytearray(str(eth/ip/tcp/payload))
+
+src::Source() -> Rewrite(templates=[test_packet]) -> NetPlay() -> Sink()
+
+bess.add_tc('slow', limit={'packets': 10000})
+bess.attach_task(src.name, tc='slow')
