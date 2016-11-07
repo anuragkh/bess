@@ -9,26 +9,11 @@
 #include <rte_udp.h>
 #include <rte_lpm.h>
 
-#include "../module.h"
 #include "../packetstore/packetstore.h"
-
-class NetPlay : public Module {
- public:
-  NetPlay();
-
-  virtual void ProcessBatch(struct pkt_batch *batch);
-
-  static const gate_idx_t kNumIGates = 1;
-  static const gate_idx_t kNumOGates = 1;
-
-  static const Commands<Module> cmds;
-
- private:
-  netplay::packet_store::handle* handle_;
-  netplay::packet_store store_;
-};
+#include "netplay.h"
 
 const Commands<Module> NetPlay::cmds = { };
+const PbCommands<Module> NetPlay::pb_cmds = { };
 
 NetPlay::NetPlay() {
   handle_ = store_.get_handle();
