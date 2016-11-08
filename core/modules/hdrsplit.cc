@@ -12,7 +12,7 @@
 #include "hdrsplit.h"
 
 const Commands<Module> HeaderSplit::cmds = { };
-const PbCommands<Module> HeaderSplit::pb_cmds = { };
+const PbCommands HeaderSplit::pb_cmds = { };
 
 void HeaderSplit::ProcessBatch(struct pkt_batch *batch) {
   int cnt = batch->cnt;

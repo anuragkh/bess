@@ -13,5 +13,5 @@ class HeaderSplit : public Module {
   static const size_t kMaxHdrSize = 138;
 
   static const Commands<Module> cmds;
-  static const PbCommands<Module> pb_cmds;
+  static const PbCommands pb_cmds;
 };

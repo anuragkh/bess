@@ -13,7 +13,7 @@
 #include "netplay.h"
 
 const Commands<Module> NetPlay::cmds = { };
-const PbCommands<Module> NetPlay::pb_cmds = { };
+const PbCommands NetPlay::pb_cmds = { };
 
 NetPlay::NetPlay() {
   handle_ = store_.get_handle();

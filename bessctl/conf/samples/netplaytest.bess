@@ -1,13 +1,30 @@
 import scapy.all as scapy
+import socket
 
-eth = scapy.Ether(dst='00:02:15:37:a2:44', src='00:ae:f3:52:aa:d1')
-ip = scapy.IP()
-tcp = scapy.TCP()
-payload = 'Hello World'
+def aton(ip):
+    return bytearray(socket.inet_aton(ip))
 
-test_packet = bytearray(str(eth/ip/tcp/payload))
+# Craft a packet with the specified IP address and port number
+def gen_packet(dst_ip, dst_port):
+    eth = scapy.Ether(src='02:1e:67:9f:4d:ae', dst='06:16:3e:1b:72:32')
+    ip = scapy.IP(src='10.0.0.1', dst=dst_ip)
+    tcp = scapy.TCP(sport=1234, dport=dst_port)
+    payload = 'helloworld'
+    pkt = eth/ip/tcp/payload
+    return bytearray(str(pkt))
 
-src::Source() -> Rewrite(templates=[test_packet]) -> NetPlay() -> Sink()
+pkts = [gen_packet('172.16.100.1', 80),
+        gen_packet('172.12.55.99', 54321),
+        gen_packet('172.12.55.3', 8080),
+        gen_packet('172.16.100.1', 345),
+        gen_packet('172.12.55.99', 12345),
+        gen_packet('192.168.1.123', 80)]
+
+# Put NetPlay in non-critical path via queue module
+src::Source() -> Rewrite(templates=pkts) -> hs::HeaderSplit() 
+hs:0 -> Sink()
+hs:1 -> queue::Queue() -> np::NetPlay()
 
 bess.add_tc('slow', limit={'packets': 10000})
 bess.attach_task(src.name, tc='slow')
+bess.attach_task(queue.name)
