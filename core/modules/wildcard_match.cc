@@ -1,5 +1,6 @@
 #include "wildcard_match.h"
 
+#include "../utils/endian.h"
 #include "../utils/format.h"
 
 /* k1 = k2 & mask */
@@ -380,11 +381,12 @@ pb_error_t WildcardMatch::ExtractKeyMask(const T &arg, wm_hkey_t *key,
     int force_be = (fields_[i].attr_id < 0);
 
     if (uint64_to_bin(reinterpret_cast<uint8_t *>(&v), field_size,
-                      arg.values(i), force_be || is_be_system())) {
+                      arg.values(i), force_be || bess::utils::is_be_system())) {
       return pb_error(EINVAL, "idx %lu: not a correct %d-byte value", i,
                       field_size);
     } else if (uint64_to_bin(reinterpret_cast<uint8_t *>(&m), field_size,
-                             arg.masks(i), force_be || is_be_system())) {
+                             arg.masks(i),
+                             force_be || bess::utils::is_be_system())) {
       return pb_error(EINVAL, "idx %lu: not a correct %d-byte mask", i,
                       field_size);
     }
@@ -530,9 +532,9 @@ int WildcardMatch::DelEntry(struct WmTuple *tuple, wm_hkey_t *key) {
   return 0;
 }
 
-bess::pb::ModuleCommandResponse WildcardMatch::CommandAddPb(
+pb_cmd_response_t WildcardMatch::CommandAddPb(
     const bess::pb::WildcardMatchCommandAddArg &arg) {
-  bess::pb::ModuleCommandResponse response;
+  pb_cmd_response_t response;
 
   gate_idx_t gate = arg.gate();
   int priority = arg.priority();
@@ -577,9 +579,9 @@ bess::pb::ModuleCommandResponse WildcardMatch::CommandAddPb(
   return response;
 }
 
-bess::pb::ModuleCommandResponse WildcardMatch::CommandDeletePb(
+pb_cmd_response_t WildcardMatch::CommandDeletePb(
     const bess::pb::WildcardMatchCommandDeleteArg &arg) {
-  bess::pb::ModuleCommandResponse response;
+  pb_cmd_response_t response;
 
   wm_hkey_t key;
   wm_hkey_t mask;
@@ -608,21 +610,20 @@ bess::pb::ModuleCommandResponse WildcardMatch::CommandDeletePb(
   return response;
 }
 
-bess::pb::ModuleCommandResponse WildcardMatch::CommandClearPb(
-    const bess::pb::EmptyArg &) {
+pb_cmd_response_t WildcardMatch::CommandClearPb(const bess::pb::EmptyArg &) {
   for (int i = 0; i < num_tuples_; i++) {
     tuples_[i].ht.Clear();
   }
 
-  bess::pb::ModuleCommandResponse response;
+  pb_cmd_response_t response;
 
   set_cmd_response_error(&response, pb_errno(0));
   return response;
 }
 
-bess::pb::ModuleCommandResponse WildcardMatch::CommandSetDefaultGatePb(
+pb_cmd_response_t WildcardMatch::CommandSetDefaultGatePb(
     const bess::pb::WildcardMatchCommandSetDefaultGateArg &arg) {
-  bess::pb::ModuleCommandResponse response;
+  pb_cmd_response_t response;
 
   int gate = arg.gate();
 
