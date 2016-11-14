@@ -5,33 +5,19 @@
 #include <string>
 #include <vector>
 
+#include "gate.h"
 #include "message.h"
 #include "metadata.h"
 #include "snbuf.h"
 #include "snobj.h"
 #include "task.h"
 #include "utils/cdlist.h"
-#include "utils/simd.h"
 
 static inline void set_cmd_response_error(pb_cmd_response_t *response,
                                           const pb_error_t &error) {
   response->mutable_error()->CopyFrom(error);
 }
-
-typedef uint16_t gate_idx_t;
-
-#define INVALID_GATE UINT16_MAX
-
-/* A module may have up to MAX_GATES input/output gates (separately). */
-#define MAX_GATES 8192
-#define DROP_GATE MAX_GATES
-static_assert(MAX_GATES < INVALID_GATE, "invalid macro value");
-static_assert(DROP_GATE <= MAX_GATES, "invalid macro value");
-
 #define MODULE_NAME_LEN 128
-
-#define TRACK_GATES 1
-#define TCPDUMP_GATES 1
 
 #define MAX_TASKS_PER_MODULE 32
 #define INVALID_TASK_ID ((task_id_t)-1)
@@ -64,47 +50,6 @@ static inline module_init_func_t MODULE_INIT_FUNC(
 }
 
 class Module;
-
-struct gate {
-  /* immutable values */
-  Module *m;           /* the module this gate belongs to */
-  gate_idx_t gate_idx; /* input/output gate index of itself */
-
-  /* mutable values below */
-  void *arg;
-
-  union {
-    struct {
-      struct cdlist_item igate_upstream;
-      struct gate *igate;
-      gate_idx_t igate_idx; /* cache for igate->gate_idx */
-    } out;
-
-    struct {
-      struct cdlist_head ogates_upstream;
-    } in;
-  };
-
-/* TODO: generalize with gate hooks */
-#if TRACK_GATES
-  uint64_t cnt;
-  uint64_t pkts;
-#endif
-#if TCPDUMP_GATES
-  uint32_t tcpdump;
-  int fifo_fd;
-#endif
-};
-
-struct gates {
-  /* Resizable array of 'struct gate *'.
-   * Unconnected elements are filled with nullptr */
-  struct gate **arr;
-
-  /* The current size of the array.
-   * Always <= m->mclass->num_[i|o]gates */
-  gate_idx_t curr_size;
-};
 
 #define CALL_MEMBER_FN(obj, ptr_to_member_func) ((obj).*(ptr_to_member_func))
 
@@ -234,7 +179,6 @@ class ModuleBuilder {
  private:
   std::function<Module *()> module_generator_;
 
-  static std::map<std::string, ModuleBuilder> &all_module_builders_;
   static std::map<std::string, Module *> all_modules_;
 
   gate_idx_t kNumIGates;
@@ -311,8 +255,8 @@ class Module {
    * 'instance'
    * need this function.
    * Returns its allocated ID (>= 0), or a negative number for error */
-  int AddMetadataAttr(const std::string &name, int size,
-                      bess::metadata::AccessMode mode);
+  int AddMetadataAttr(const std::string &name, size_t size,
+                      bess::metadata::Attribute::AccessMode mode);
 
 #if TCPDUMP_GATES
   int EnableTcpDump(const char *fifo, gate_idx_t gate);
@@ -337,6 +281,10 @@ class Module {
     return module_builder_->RunCommand(this, cmd, arg);
   }
 
+  const std::vector<bess::metadata::Attribute> &all_attrs() const {
+    return attrs;
+  }
+
  private:
   void set_name(const std::string &name) { name_ = name; }
   void set_module_builder(const ModuleBuilder *builder) {
@@ -352,21 +300,19 @@ class Module {
 
   bess::metadata::Pipeline *pipeline_;
 
+  std::vector<bess::metadata::Attribute> attrs;
+
   DISALLOW_COPY_AND_ASSIGN(Module);
 
   // FIXME: porting in progress ----------------------------
  public:
   struct task *tasks[MAX_TASKS_PER_MODULE] = {};
 
-  size_t num_attrs = 0;
-  struct bess::metadata::mt_attr attrs[bess::metadata::kMaxAttrsPerModule] = {};
-
-  int curr_scope = 0;
-
   bess::metadata::mt_offset_t attr_offsets[bess::metadata::kMaxAttrsPerModule] =
       {};
-  struct gates igates = {};
-  struct gates ogates = {};
+
+  struct gates igates;
+  struct gates ogates;
 };
 
 void deadend(struct pkt_batch *batch);
@@ -387,50 +333,16 @@ inline void Module::RunChooseModule(gate_idx_t ogate_idx,
     return;
   }
 
-#if SN_TRACE_MODULES
-  _trace_before_call(this, next, batch);
-#endif
-
-#if TRACK_GATES
-  ogate->cnt += 1;
-  ogate->pkts += batch->cnt;
-#endif
-
-#if TCPDUMP_GATES
-  if (unlikely(ogate->tcpdump))
-    DumpPcapPkts(ogate, batch);
-#endif
-
-  ctx.push_igate(ogate->out.igate_idx);
-
-  // XXX
-  ((Module *)ogate->arg)->ProcessBatch(batch);
-
-  ctx.pop_igate();
-
-#if SN_TRACE_MODULES
-  _trace_after_call();
-#endif
+  // Place packets into buffer so they can be run later
+  if (!ctx.push_ogate_and_packets(ogate, batch)) {
+    // This really shouldn't happen.
+    deadend(batch);
+    return;
+  }
 }
 
 inline void Module::RunNextModule(struct pkt_batch *batch) {
   RunChooseModule(0, batch);
-}
-
-static inline int is_valid_attr(const std::string &name, size_t size,
-                                bess::metadata::AccessMode mode) {
-  if (name.empty())
-    return 0;
-
-  if (size < 1 || size > bess::metadata::kMetadataAttrMaxSize)
-    return 0;
-
-  if (mode != bess::metadata::AccessMode::READ &&
-      mode != bess::metadata::AccessMode::WRITE &&
-      mode != bess::metadata::AccessMode::UPDATE)
-    return 0;
-
-  return 1;
 }
 
 /* run all per-thread initializers */
@@ -453,7 +365,7 @@ static inline int is_active_gate(struct gates *gates, gate_idx_t idx) {
 typedef struct snobj *(*mod_cmd_func_t)(struct module *, const char *,
                                         struct snobj *);
 
-// Unsafe, but faster version. for offset use mt_attr_offset().
+// Unsafe, but faster version. for offset use Attribute_offset().
 template <typename T>
 inline T *_ptr_attr_with_offset(bess::metadata::mt_offset_t offset,
                                 struct snbuf *pkt) {
@@ -486,10 +398,9 @@ inline T *ptr_attr_with_offset(bess::metadata::mt_offset_t offset,
 template <typename T>
 inline T get_attr_with_offset(bess::metadata::mt_offset_t offset,
                               struct snbuf *pkt) {
-  T _zeroed = {};
   return bess::metadata::IsValidOffset(offset)
              ? _get_attr_with_offset<T>(offset, pkt)
-             : _zeroed;
+             : T();
 }
 
 template <typename T>
