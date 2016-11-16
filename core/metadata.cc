@@ -60,7 +60,7 @@ static inline attr_id_t get_attr_id(const struct Attribute *attr) {
 
 class ScopeComponentComp {
  public:
-  ScopeComponentComp(const bool &revparam = false) { reverse_ = revparam; }
+  ScopeComponentComp(const bool &revparam = false) : reverse_(revparam) {}
 
   bool operator()(const ScopeComponent *lhs, const ScopeComponent *rhs) const {
     if (reverse_) {
@@ -364,7 +364,7 @@ void Pipeline::AssignOffsets() {
   FillOffsetArrays();
 }
 
-void Pipeline::LogAllScopes() {
+void Pipeline::LogAllScopes() const {
   for (size_t i = 0; i < scope_components_.size(); i++) {
     VLOG(1) << "scope component for " << scope_components_[i].size()
             << "-byte attr " << scope_components_[i].attr_id() << "at offset "
@@ -383,11 +383,13 @@ void Pipeline::LogAllScopes() {
       break;
     }
 
+    const scope_id_t *scope_arr = module_components_.find(m)->second;
+
     LOG(INFO) << "Module " << m->name()
               << " part of the following scope components: ";
     for (size_t i = 0; i < kMetadataTotalSize; i++) {
-      if (module_components_[m][i] != -1) {
-        LOG(INFO) << "scope " << module_components_[m][i] << " at offset " << i;
+      if (scope_arr[i] != -1) {
+        LOG(INFO) << "scope " << scope_arr[i] << " at offset " << i;
       }
     }
   }
@@ -450,16 +452,43 @@ int Pipeline::ComputeMetadataOffsets() {
   return 0;
 }
 
-// TODO: We need to keep track of the number of modules that registered each
-// attribute. Then RegisterAttribute does +1 while Deregister one does -1
-int Pipeline::RegisterAttribute(const struct Attribute *attr) {
-  attr_id_t id = get_attr_id(attr);
-  const auto &it = attributes_.find(id);
-  if (it == attributes_.end()) {
-    attributes_.emplace(id, attr);
+int Pipeline::RegisterAttribute(const std::string &attr_name, size_t size) {
+  const auto &it = registered_attrs_.find(attr_name);
+  if (it == registered_attrs_.end()) {
+    registered_attrs_.emplace(attr_name, std::make_tuple(size, 1));
     return 0;
   }
-  return (it->second->size == attr->size) ? 0 : -EEXIST;
+
+  size_t registered_size = std::get<0>(it->second);
+  int &count = std::get<1>(it->second);
+
+  if (registered_size == size) {
+    count++;
+    return 0;
+  } else {
+    LOG(ERROR) << "Attribute '" << attr_name << "' has size mismatch: registered("
+               << registered_size << ") vs new(" << size << ")";
+    return -EINVAL;
+  }
+}
+
+void Pipeline::DeregisterAttribute(const std::string &attr_name) {
+  const auto &it = registered_attrs_.find(attr_name);
+  if (it == registered_attrs_.end()) {
+    LOG(ERROR) << "ReregisteredAttribute() called, but '" << attr_name
+             << "' was not registered";
+    return;
+  }
+
+  int &count = std::get<1>(it->second);
+
+  count--;
+  assert(count >= 0);
+
+  if (count == 0) {
+    // No more modules are using the attribute. Remove it from the map.
+    registered_attrs_.erase(it);
+  }
 }
 
 }  // namespace metadata

@@ -70,6 +70,7 @@ int ModuleBuilder::DestroyModule(Module *m, bool erase) {
   }
 
   m->DestroyAllTasks();
+  m->DeregisterAllAttributes();
 
   if (erase) {
     all_modules_.erase(m->name());
@@ -229,11 +230,17 @@ void Module::DestroyAllTasks() {
   }
 }
 
+void Module::DeregisterAllAttributes() {
+  for (const auto &it : attrs_) {
+    pipeline_->DeregisterAttribute(it.name);
+  }
+}
+
 int Module::AddMetadataAttr(const std::string &name, size_t size,
                             bess::metadata::Attribute::AccessMode mode) {
   int ret;
 
-  if (attrs.size() >= bess::metadata::kMaxAttrsPerModule)
+  if (attrs_.size() >= bess::metadata::kMaxAttrsPerModule)
     return -ENOSPC;
 
   if (name.empty())
@@ -242,19 +249,26 @@ int Module::AddMetadataAttr(const std::string &name, size_t size,
   if (size < 1 || size > bess::metadata::kMetadataAttrMaxSize)
     return -EINVAL;
 
+  // We do not allow a module to have multiple attributes with the same name
+  for (const auto &it : attrs_) {
+    if (it.name == name) {
+      return -EEXIST;
+    }
+  }
+
+  if ((ret = pipeline_->RegisterAttribute(name, size))) {
+    return ret;
+  }
+
   bess::metadata::Attribute attr;
   attr.name = name;
   attr.size = size;
   attr.mode = mode;
   attr.scope_id = -1;
 
-  if ((ret = pipeline_->RegisterAttribute(&attr))) {
-    return ret;
-  }
+  attrs_.push_back(attr);
 
-  attrs.push_back(attr);
-
-  return attrs.size() - 1;
+  return attrs_.size() - 1;
 }
 
 /* returns -errno if fails */
@@ -278,7 +292,7 @@ int Module::ConnectModules(gate_idx_t ogate_idx, Module *m_next,
   }
 
   if (ogate_idx >= ogates.size()) {
-    ogates.emplace_back();
+    ogates.resize(ogate_idx + 1, nullptr);
   }
 
   ogate = new bess::OGate(this, ogate_idx, m_next);
@@ -288,7 +302,7 @@ int Module::ConnectModules(gate_idx_t ogate_idx, Module *m_next,
   ogates[ogate_idx] = ogate;
 
   if (igate_idx >= m_next->igates.size()) {
-    m_next->igates.emplace_back();
+    m_next->igates.resize(igate_idx + 1, nullptr);
   }
 
   igate = new bess::IGate(m_next, igate_idx, m_next);

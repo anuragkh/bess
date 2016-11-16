@@ -5,25 +5,18 @@
 #include <cstdlib>
 #include <cstring>
 
-#include <algorithm>
-#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "hooks/tcpdump.h"
 #include "hooks/track.h"
 #include "metadata.h"
 #include "module.h"
+#include "opts.h"
 #include "port.h"
 #include "tc.h"
 #include "utils/ether.h"
 #include "utils/time.h"
 #include "worker.h"
-
-// Capture the default core command line flag.
-DECLARE_int32(c);
-
-// Capture the "debug mode" command line flag.
-DECLARE_bool(d);
 
 struct handler_map {
   const char *cmd;
@@ -258,7 +251,6 @@ static struct snobj *handle_add_tc(struct snobj *q) {
       return snobj_err(EINVAL, "worker:%d does not exist", wid);
   }
 
-  memset(&params, 0, sizeof(params));
   params.name = tc_name;
 
   params.priority = snobj_eval_int(q, "priority");
@@ -301,7 +293,7 @@ static struct snobj *handle_add_tc(struct snobj *q) {
     }
   }
 
-  c = tc_init(workers[wid]->s(), &params);
+  c = tc_init(workers[wid]->s(), &params, nullptr);
   if (is_err(c))
     return snobj_err(-ptr_to_err(c), "tc_init() failed");
 

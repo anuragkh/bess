@@ -1,6 +1,5 @@
 #include "bessctl.h"
 
-#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
@@ -12,6 +11,7 @@
 #include "message.h"
 #include "metadata.h"
 #include "module.h"
+#include "opts.h"
 #include "port.h"
 #include "service.grpc.pb.h"
 #include "tc.h"
@@ -31,10 +31,6 @@ using grpc::ServerContext;
 using grpc::ServerBuilder;
 
 using namespace bess::pb;
-
-DECLARE_int32(c);
-// Capture the port command line flag.
-DECLARE_int32(p);
 
 template <typename T>
 static inline Status return_with_error(T* response, int code, const char* fmt,
@@ -443,7 +439,6 @@ class BESSControlImpl final : public BESSControl::Service {
       }
     }
 
-    memset(&params, 0, sizeof(params));
     params.name = tc_name;
 
     params.priority = request->class_().priority();
@@ -469,7 +464,7 @@ class BESSControlImpl final : public BESSControl::Service {
       params.max_burst[3] = request->class_().max_burst().bits();
     }
 
-    c = tc_init(workers[wid]->s(), &params);
+    c = tc_init(workers[wid]->s(), &params, nullptr);
     if (is_err(c))
       return return_with_error(response, -ptr_to_err(c), "tc_init() failed");
 
