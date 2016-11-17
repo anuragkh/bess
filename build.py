@@ -222,6 +222,8 @@ def build_dpdk():
     nproc = int(subprocess.check_output('nproc'))
     cmd('make -j%d -C %s EXTRA_CFLAGS=%s' % \
             (nproc, DPDK_DIR, DPDK_CFLAGS))
+    cmd('make -j%d -C %s install' % \
+            (nproc, DPDK_DIR))
 
 def build_bess():
     check_essential()
